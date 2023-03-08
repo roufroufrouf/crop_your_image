@@ -15,7 +15,7 @@ abstract class _Calculator {
   double scaleToCover(Size screenSize, Rect imageRect);
 
   /// calculates ratio of [targetImage] and [screenSize]
-  double screenSizeRatio(image.Image targetImage, Size screenSize);
+  double screenSizeRatio(int imageWidth, int imageHeight, Size screenSize);
 
   /// calculates [Rect] of the result of user moving the cropping area.
   Rect moveRect(Rect original, double deltaX, double deltaY, Rect imageRect) {
@@ -272,8 +272,8 @@ class _HorizontalCalculator extends _Calculator {
   }
 
   @override
-  double screenSizeRatio(image.Image targetImage, Size screenSize) {
-    return targetImage.width / screenSize.width;
+  double screenSizeRatio(int imageWidth, int imageHeight, Size screenSize) {
+    return imageWidth / screenSize.width;
   }
 }
 
@@ -314,7 +314,7 @@ class _VerticalCalculator extends _Calculator {
   }
 
   @override
-  double screenSizeRatio(image.Image targetImage, Size screenSize) {
-    return targetImage.height / screenSize.height;
+  double screenSizeRatio(int imageWidth, int imageHeight, Size screenSize) {
+    return imageHeight / screenSize.height;
   }
 }

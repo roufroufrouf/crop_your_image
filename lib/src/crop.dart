@@ -13,9 +13,12 @@ enum CropStatus { nothing, loading, ready, cropping }
 class Crop extends StatelessWidget {
   /// original image data
   final Uint8List image;
+  final String fileName;
+  final int imageWidth;
+  final int imageHeight;
 
   /// callback when cropping completed
-  final ValueChanged<Uint8List> onCropped;
+  final ValueChanged<Rect> onCropped;
 
   /// fixed aspect ratio of cropping area.
   /// null, by default, means no fixed aspect ratio.
@@ -92,6 +95,9 @@ class Crop extends StatelessWidget {
   const Crop({
     Key? key,
     required this.image,
+    required this.fileName,
+    required this.imageWidth,
+    required this.imageHeight,
     required this.onCropped,
     this.aspectRatio,
     this.initialSize,
@@ -123,6 +129,9 @@ class Crop extends StatelessWidget {
           data: newData,
           child: _CropEditor(
             image: image,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            fileName: fileName,
             onCropped: onCropped,
             aspectRatio: aspectRatio,
             initialSize: initialSize,
@@ -148,7 +157,10 @@ class Crop extends StatelessWidget {
 
 class _CropEditor extends StatefulWidget {
   final Uint8List image;
-  final ValueChanged<Uint8List> onCropped;
+  final int imageWidth;
+  final int imageHeight;
+  final String fileName;
+  final ValueChanged<Rect> onCropped;
   final double? aspectRatio;
   final double? initialSize;
   final CroppingAreaBuilder? initialAreaBuilder;
@@ -168,6 +180,9 @@ class _CropEditor extends StatefulWidget {
   const _CropEditor({
     Key? key,
     required this.image,
+    required this.imageWidth,
+    required this.imageHeight,
+    required this.fileName,
     required this.onCropped,
     this.aspectRatio,
     this.initialSize,
@@ -193,24 +208,21 @@ class _CropEditor extends StatefulWidget {
 class _CropEditorState extends State<_CropEditor> {
   late CropController _cropController;
   late Rect _rect;
-  image.Image? _targetImage;
   late Rect _imageRect;
 
   double? _aspectRatio;
   bool _withCircleUi = false;
   bool _isFitVertically = false;
-  Future<image.Image?>? _lastComputed;
 
-  bool get _isImageLoading => _lastComputed != null;
+  bool get _isImageLoading => false;
 
   _Calculator get calculator => _isFitVertically
       ? const _VerticalCalculator()
       : const _HorizontalCalculator();
 
   set rect(Rect newRect) {
-    setState(() {
-      _rect = newRect;
-    });
+    _rect = newRect;
+    if (mounted) setState(() {});
     widget.onMoved?.call(_rect);
   }
 
@@ -234,15 +246,13 @@ class _CropEditorState extends State<_CropEditor> {
     if (movedTop + _imageRect.height < _rect.bottom) {
       movedTop = _rect.bottom - _imageRect.height;
     }
-    setState(() {
-      _imageRect = Rect.fromLTWH(
-        min(_rect.left, movedLeft),
-        min(_rect.top, movedTop),
-        _imageRect.width,
-        _imageRect.height,
-      );
-    });
-
+    _imageRect = Rect.fromLTWH(
+      min(_rect.left, movedLeft),
+      min(_rect.top, movedTop),
+      _imageRect.width,
+      _imageRect.height,
+    );
+    if (mounted) setState(() {});
     // scale
     if (_pointerNum >= 2) {
       _applyScale(
@@ -258,7 +268,7 @@ class _CropEditorState extends State<_CropEditor> {
   }) {
     late double baseHeight;
     late double baseWidth;
-    final ratio = _targetImage!.height / _targetImage!.width;
+    final ratio = widget.imageHeight / widget.imageWidth;
 
     if (_isFitVertically) {
       baseHeight = MediaQuery.of(context).size.height;
@@ -294,15 +304,14 @@ class _CropEditorState extends State<_CropEditor> {
       return;
     }
     // apply
-    setState(() {
-      _imageRect = Rect.fromLTRB(
-        newLeft,
-        newTop,
-        newLeft + newWidth,
-        newTop + newHeight,
-      );
-      _scale = nextScale;
-    });
+    _imageRect = Rect.fromLTRB(
+      newLeft,
+      newTop,
+      newLeft + newWidth,
+      newTop + newHeight,
+    );
+    _scale = nextScale;
+    if (mounted) setState(() {});
   }
 
   @override
@@ -330,45 +339,21 @@ class _CropEditorState extends State<_CropEditor> {
 
   @override
   void didChangeDependencies() {
-    final future = compute(_fromByteData, widget.image);
-    _lastComputed = future;
-    future.then((converted) {
-      if (_lastComputed == future) {
-        _targetImage = converted;
-        _withCircleUi = widget.withCircleUi;
-        _resetCroppingArea();
-
-        setState(() {
-          _lastComputed = null;
-        });
-        widget.onStatusChanged?.call(CropStatus.ready);
-      }
-    });
+    _withCircleUi = widget.withCircleUi;
+    _resetCroppingArea();
     super.didChangeDependencies();
   }
 
   /// reset image to be cropped
   void _resetImage(Uint8List targetImage) {
-    widget.onStatusChanged?.call(CropStatus.loading);
-    final future = compute(_fromByteData, targetImage);
-    _lastComputed = future;
-    future.then((converted) {
-      if (_lastComputed == future) {
-        setState(() {
-          _targetImage = converted;
-          _lastComputed = null;
-        });
-        _resetCroppingArea();
-        widget.onStatusChanged?.call(CropStatus.ready);
-      }
-    });
+    _resetCroppingArea();
   }
 
   /// reset [Rect] of cropping area with current state
   void _resetCroppingArea() {
     final screenSize = MediaQuery.of(context).size;
 
-    final imageRatio = _targetImage!.width / _targetImage!.height;
+    final imageRatio = widget.imageWidth / widget.imageHeight;
     _isFitVertically = imageRatio < screenSize.aspectRatio;
 
     _imageRect = calculator.imageRect(screenSize, imageRatio);
@@ -403,7 +388,8 @@ class _CropEditorState extends State<_CropEditor> {
       );
     } else {
       final screenSizeRatio = calculator.screenSizeRatio(
-        _targetImage!,
+        widget.imageWidth,
+        widget.imageHeight,
         MediaQuery.of(context).size,
       );
       rect = Rect.fromLTWH(
@@ -417,31 +403,18 @@ class _CropEditorState extends State<_CropEditor> {
 
   /// crop given image with given area.
   Future<void> _crop(bool withCircleShape) async {
-    assert(_targetImage != null);
-
     final screenSizeRatio = calculator.screenSizeRatio(
-      _targetImage!,
+      widget.imageWidth,
+      widget.imageHeight,
       MediaQuery.of(context).size,
     );
 
-    widget.onStatusChanged?.call(CropStatus.cropping);
-
-    // use compute() not to block UI update
-    final cropResult = await compute(
-      withCircleShape ? _doCropCircle : _doCrop,
-      [
-        _targetImage!,
-        Rect.fromLTWH(
-          (_rect.left - _imageRect.left) * screenSizeRatio / _scale,
-          (_rect.top - _imageRect.top) * screenSizeRatio / _scale,
-          _rect.width * screenSizeRatio / _scale,
-          _rect.height * screenSizeRatio / _scale,
-        ),
-      ],
-    );
-    widget.onCropped(cropResult);
-
-    widget.onStatusChanged?.call(CropStatus.ready);
+    widget.onCropped(Rect.fromLTWH(
+      (_rect.left - _imageRect.left) * screenSizeRatio / _scale,
+      (_rect.top - _imageRect.top) * screenSizeRatio / _scale,
+      _rect.width * screenSizeRatio / _scale,
+      _rect.height * screenSizeRatio / _scale,
+    ));
   }
 
   @override
@@ -684,60 +657,4 @@ class DotControl extends StatelessWidget {
       ),
     );
   }
-}
-
-/// process cropping image.
-/// this method is supposed to be called only via compute()
-Uint8List _doCrop(List<dynamic> cropData) {
-  final originalImage = cropData[0] as image.Image;
-  final rect = cropData[1] as Rect;
-  return Uint8List.fromList(
-    image.encodePng(
-      image.copyCrop(
-        originalImage,
-        x: rect.left.toInt(),
-        y: rect.top.toInt(),
-        width: rect.width.toInt(),
-        height: rect.height.toInt(),
-      ),
-    ),
-  );
-}
-
-/// process cropping image with circle shape.
-/// this method is supposed to be called only via compute()
-Uint8List _doCropCircle(List<dynamic> cropData) {
-  final originalImage = cropData[0] as image.Image;
-  final rect = cropData[1] as Rect;
-  final center = image.Point(
-    rect.left + rect.width / 2,
-    rect.top + rect.height / 2,
-  );
-  return Uint8List.fromList(
-    image.encodePng(
-      image.copyCropCircle(
-        originalImage,
-        centerX: center.xi,
-        centerY: center.yi,
-        radius: min(rect.width, rect.height) ~/ 2,
-      ),
-    ),
-  );
-}
-
-// decode orientation awared Image.
-image.Image _fromByteData(Uint8List data) {
-  final tempImage = image.decodeImage(data);
-  assert(tempImage != null);
-
-  // check orientation
-  switch (tempImage?.exif.exifIfd.orientation ?? -1) {
-    case 3:
-      return image.copyRotate(tempImage!, angle: 180);
-    case 6:
-      return image.copyRotate(tempImage!, angle: 90);
-    case 8:
-      return image.copyRotate(tempImage!, angle: -90);
-  }
-  return tempImage!;
 }

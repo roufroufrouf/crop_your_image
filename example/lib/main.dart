@@ -117,13 +117,16 @@ class _CropSampleState extends State<CropSample> {
                     children: [
                       if (_imageDataList.isNotEmpty) ...[
                         Crop(
+                          fileName: '',
+                          imageWidth: 0,
+                          imageHeight: 0,
                           controller: _cropController,
                           image: _imageDataList[_currentImage],
                           onCropped: (croppedData) {
-                            setState(() {
-                              _croppedData = croppedData;
-                              _isCropping = false;
-                            });
+                            // setState(() {
+                            //   _croppedData = croppedData;
+                            //   _isCropping = false;
+                            // });
                           },
                           withCircleUi: _isCircleUi,
                           onStatusChanged: (status) => setState(() {
